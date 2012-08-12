@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+
+BASE_URL='https://bbs.sjtu.edu.cn'
+BASE_DIR="$HOME/.config/bbs_upload"
+MAX_FILE_SIZE=1048577
+ret=0
+
+function _do_req()
+{
+  id=$1
+  shift
+  if [[ "XX$id" = "XXguest" ]]
+  then
+    curl -s $* | iconv -f gb2312
+  else
+    COOKEI_IN="$BASE_DIR/cookie.$id.in"
+    COOKEI_OUT="$BASE_DIR/cookie.$id.out"
+    touch $COOKEI_IN $COOKEI_OUT
+    curl -s -c $COOKEI_IN -b $COOKEI_OUT $*  | iconv -f gb2312
+    cp $COOKEI_IN $COOKEI_OUT
+  fi
+}
+function do_upload()
+{
+  id=$1
+  shift
+  files=$@
+  count=0
+  for file in $files
+  do
+    if _do_req \
+      $id \
+      "$BASE_URL/bbsdoupload" \
+      -F"board=$board" \
+      -F"up=@$file;filename=$( basename $file)" \
+      -F"level=1" \
+      -F"live=180" \
+      -F"exp=upload-by-curl" |\
+      grep '附件上载成功, URL为 :<P><font color=green>http://bbs.sjtu.edu.cn/file/[A-Za-z0-9]\+/[0-9]\+[^< ]*' -o |grep --color=auto 'http.*' -o
+    then
+      count=$(( $count + 1 ))
+    else
+      echo "file: $file upload failed." 1>&2
+    fi
+  done
+  return $count
+}
+function check_file_size()
+{
+  files=$@
+  for file in $files
+  do
+    size=$(stat -c%s $file)
+    if [[ $size -gt $MAX_FILE_SIZE ]]
+    then
+      echo "$file is too large, max ${MAX_FILE_SIZE}B."
+      ret=-1
+    fi
+  done
+  return $ret
+}
+function check_board_exist()
+{
+  board=$1
+  if _do_req 'guest' "$BASE_URL/bbsdoc?board=$board" | grep '<br>ERROR: 错误的讨论区<br><br>' >/dev/null
+  then
+    echo "wrong board: $board."
+    exit -1
+  fi
+}
+function check_session_and_login()
+{
+  id=$1
+  pw=$2
+  if _do_req $id "$BASE_URL/bbsleftnew" | grep '<a class=left href=bbslogout target=_top>\[注销本次登录\]</a>' >/dev/null
+  then
+    echo 'already login.' 1>&2
+  else
+    echo 'session expired, do login.' 1>&2
+    if _do_req \
+      $id \
+      "$BASE_URL/bbslogin" \
+      -d "id=$id&pw=$pw&submit=login" |\
+      grep '<title>出错啦</title>' >/dev/null
+    then
+      echo 'login incorect.' 1>&2
+    fi
+  fi
+}
+function _help()
+{
+  cat <<EOF
+USAGE: upload BOARD FILE [FILE ...]
+upload FILE to BOARD@bbs.sjtu.edu.cn
+  -h display this help
+EOF
+}
+
+if [[ $# < 2 ]]
+then
+  _help
+  exit -1
+fi
+
+board=$1
+shift
+
+files=$@
+check_file_size $files
+if [[ $? -eq -1 ]]
+then
+  exit $ret
+fi
+
+check_board_exist $board
+
+if [[ ! -d $BASE_DIR ]]
+then
+  mkdir -p $BASE_DIR
+else
+  line=$( cat $BASE_DIR/passwd  2>/dev/null)
+  id=$( echo $line | cut -d ':' -f 1 )
+  pw=$( echo $line | cut -d ':' -f 2 )
+fi
+if [[ "XX$id" = "XX" ]]
+then
+  read -p "Your BBS ID: " id
+fi
+if [[ "XX$pw" = "XX" ]]
+then
+  stty -echo
+  read -p "Your BBS password: " pw
+  stty echo
+  echo
+fi
+
+check_session_and_login $id $pw
+
+do_upload $id $files
+exit $?

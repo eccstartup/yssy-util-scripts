@@ -1,0 +1,14 @@
+upload: a bash script to upload file to bbs.sjtu.edu.cn
+
+[root@exaatto ~]# upload -h
+USAGE: upload BOARD FILE [FILE ...]
+upload FILE to BOARD@bbs.sjtu.edu.cn
+  -h display this help
+
+This script uses curl(1) to handle the HTTP mess, and uses grep(1) to "parse" the HTML (god bless it) responses.
+This script uses ~/.config/bbs_upload to store cookies, you can also provide a *plain text* passwd file in that directory, such as:
+[root@exaatto ~]# cat ~/.config/bbs_upload/passwd
+username:password
+
+If the passwd file doesn't exist or is empty, this script would prompt for your ID and password. Since your password would be stored in plain text without any protection, it's *NOT* recommended to use the passwd file.
+

@@ -12,3 +12,4 @@ username:password
 
 If the passwd file doesn't exist or is empty, this script would prompt for your ID and password. Since your password would be stored in plain text without any protection, it's *NOT* recommended to use the passwd file.
 
+This script prints url to stdout, infomations to stderr and returns count of files successfully uploaded.

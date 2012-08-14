@@ -3,6 +3,7 @@
 BASE_URL='https://bbs.sjtu.edu.cn'
 BASE_DIR="$HOME/.config/bbs_upload"
 MAX_FILE_SIZE=1048577
+AD="upload by upload: https://github.com/exaatto/yssy-util-scripts"
 ret=0
 
 function _do_req()
@@ -35,7 +36,7 @@ function do_upload()
       -F"up=@$file;filename=$( basename $file)" \
       -F"level=1" \
       -F"live=180" \
-      -F"exp=upload-by-curl" |\
+      -F"exp=$AD" |\
       grep '附件上载成功, URL为 :<P><font color=green>http://bbs.sjtu.edu.cn/file/[A-Za-z0-9]\+/[0-9]\+[^< ]*' -o |grep --color=auto 'http.*' -o
     then
       count=$(( $count + 1 ))
@@ -47,14 +48,15 @@ function do_upload()
 }
 function check_file_size()
 {
+  ret=0
   files=$@
   for file in $files
   do
-    size=$(stat -c%s $file)
+    size=$(stat -c%s $file 2>/dev/null)
     if [[ $size -gt $MAX_FILE_SIZE ]]
     then
       echo "$file is too large, max ${MAX_FILE_SIZE}B."
-      ret=-1
+      ret=1
     fi
   done
   return $ret
@@ -65,8 +67,9 @@ function check_board_exist()
   if _do_req 'guest' "$BASE_URL/bbsdoc?board=$board" | grep '<br>ERROR: 错误的讨论区<br><br>' >/dev/null
   then
     echo "wrong board: $board."
-    exit -1
+    return 1
   fi
+  return 0
 }
 function check_session_and_login()
 {
@@ -96,40 +99,45 @@ upload FILE to BOARD@bbs.sjtu.edu.cn
 EOF
 }
 
+
 if [[ $# < 2 ]]
 then
   _help
-  exit -1
+  exit 0
 fi
+
+IFS_SAVE=$IFS
+export IFS=$(echo -ne '\000')
 
 board=$1
 shift
 
 files=$@
-check_file_size $files
-if [[ $? -eq -1 ]]
+
+if ( check_file_size $files || check_board_exist $board ) 
 then
-  exit $ret
+  :
+else
+  export IFS=$IFS_SAVE; exit 0
 fi
 
-check_board_exist $board
-
-if [[ ! -d $BASE_DIR ]]
+if [[ -d $BASE_DIR ]]
 then
-  mkdir -p $BASE_DIR
-else
   line=$( cat $BASE_DIR/passwd  2>/dev/null)
   id=$( echo $line | cut -d ':' -f 1 )
   pw=$( echo $line | cut -d ':' -f 2 )
+else
+  mkdir -p $BASE_DIR
 fi
+
 if [[ "XX$id" = "XX" ]]
 then
-  read -p "Your BBS ID: " id
+  read -p "Your BBS ID: " id 1>&2
 fi
 if [[ "XX$pw" = "XX" ]]
 then
   stty -echo
-  read -p "Your BBS password: " pw
+  read -p "Your BBS password: " pw 1>&2
   stty echo
   echo
 fi
@@ -137,4 +145,6 @@ fi
 check_session_and_login $id $pw
 
 do_upload $id $files
-exit $?
+COUNT=$?
+export IFS=$IFS_SAVE
+exit $COUNT
